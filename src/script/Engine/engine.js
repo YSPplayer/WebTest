@@ -1,5 +1,3 @@
-// import * as Filament from '@/package/filament.js';
-
 export class Engine {
     constructor() {
         this.engine = null;//引擎实例
