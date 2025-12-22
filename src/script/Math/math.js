@@ -3,7 +3,7 @@ export class Math {
    constructor() {
    }
     // 计算面法线
-    static calculateFaceNormal(v1, v2, v3) {
+    static updateFaceNormal(v1, v2, v3) {
         const edge1 = glMatrix.vec3.create();
         const edge2 = glMatrix.vec3.create();
         const normal = glMatrix.vec3.create();
@@ -52,7 +52,7 @@ export class Math {
                 vertices[idx3 * 3 + 2]
             );
             // 计算面法线
-            const normal = Algorithm.calculateFaceNormal(v1, v2, v3);
+            const normal = Algorithm.updateFaceNormal(v1, v2, v3);
             // 将法线添加到每个顶点
             glMatrix.vec3.add(normalsv3[idx1], normalsv3[idx1], normal);
             glMatrix.vec3.add(normalsv3[idx2], normalsv3[idx2], normal);
@@ -124,5 +124,38 @@ export class Math {
         }
 
         return tangents;
+    }
+    //计算模型包围盒
+    static updateBounds(vertexArray) {
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let minZ = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        let maxZ = Number.NEGATIVE_INFINITY;
+
+        for (let i = 0; i < vertexArray.length; i += 3) {
+            const x = vertexArray[i];
+            const y = vertexArray[i + 1];
+            const z = vertexArray[i + 2];
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (z < minZ) minZ = z;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+            if (z > maxZ) maxZ = z;
+        }
+
+        const centerX = (minX + maxX) * 0.5;
+        const centerY = (minY + maxY) * 0.5;
+        const centerZ = (minZ + maxZ) * 0.5;
+        const halfExtentX = Math.max(0.001, (maxX - minX) * 0.5);
+        const halfExtentY = Math.max(0.001, (maxY - minY) * 0.5);
+        const halfExtentZ = Math.max(0.001, (maxZ - minZ) * 0.5);
+        //模型中心点 模型中心到各位置半径
+        return {
+            center: [centerX, centerY, centerZ],
+            halfExtent: [halfExtentX, halfExtentY, halfExtentZ]
+        };
     }
 }
