@@ -17,4 +17,9 @@
 cmake --preset windows-debug
 cmake --build --preset windows-debug --target hello_host
 .\build\msvc\bin\Debug\hello_host.exe
+.\build\msvc\bin\Debug\hello_host.exe --smoke-test
 ```
+
+Linux 侧约定：
+
+- `linux-debug` / `linux-release` preset 使用 `gcc/g++`
