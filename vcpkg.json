@@ -1,0 +1,7 @@
+{
+  "name": "native-ui-framework",
+  "version-semver": "0.1.0",
+  "description": "Native high-performance cross-platform desktop UI framework",
+  "builtin-baseline": "6471a1595b02d5b9cee29318cf1538924b371676",
+  "dependencies": []
+}

@@ -4,6 +4,8 @@ dist/
 .cache/
 .vs/
 .vscode/
+third_party/vcpkg/
+vcpkg_installed/
 *.user
 *.suo
 *.VC.db
@@ -12,4 +14,4 @@ dist/
 *.pdb
 *.ilk
 *.log
-
+third_party/

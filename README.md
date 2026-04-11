@@ -14,7 +14,7 @@
 常用命令：
 
 ```powershell
-cmake -S . -B build
-cmake --build build --config Debug --target hello_host
-.\build\bin\Debug\hello_host.exe
+cmake --preset windows-debug
+cmake --build --preset windows-debug --target hello_host
+.\build\msvc\bin\Debug\hello_host.exe
 ```
