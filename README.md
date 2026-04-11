@@ -23,3 +23,10 @@ cmake --build --preset windows-debug --target hello_host
 Linux 侧约定：
 
 - `linux-debug` / `linux-release` preset 使用 `gcc/g++`
+
+当前 `hello_host` 已验证：
+
+- `SDL3` 平台宿主
+- `bgfx` 渲染初始化
+- resize 事件驱动的渲染重置
+- smoke-test 自动回归

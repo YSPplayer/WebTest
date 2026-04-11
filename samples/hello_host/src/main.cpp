@@ -6,6 +6,7 @@
 #include "native_ui/framework_info.hpp"
 #include "native_ui/platform/app.hpp"
 #include "native_ui/platform/testing.hpp"
+#include "native_ui/render/context.hpp"
 
 namespace {
 
@@ -18,6 +19,12 @@ using native_ui::platform::PointI;
 using native_ui::platform::SizeI;
 using native_ui::platform::Status;
 using native_ui::platform::WindowDesc;
+using native_ui::render::BackendKind;
+using native_ui::render::ClearDesc;
+using native_ui::render::RenderConfig;
+using native_ui::render::RenderContext;
+using native_ui::render::RenderSurfaceDesc;
+using native_ui::render::RendererType;
 
 constexpr int kInitialWidth = 960;
 constexpr int kInitialHeight = 640;
@@ -33,6 +40,25 @@ bool has_arg(const int argc, char** argv, const std::string_view needle) {
         }
     }
     return false;
+}
+
+const char* to_string(const RendererType renderer_type) {
+    switch (renderer_type) {
+    case RendererType::auto_select:
+        return "auto_select";
+    case RendererType::direct3d11:
+        return "direct3d11";
+    case RendererType::direct3d12:
+        return "direct3d12";
+    case RendererType::vulkan:
+        return "vulkan";
+    case RendererType::opengl:
+        return "opengl";
+    case RendererType::metal:
+        return "metal";
+    default:
+        return "unknown";
+    }
 }
 
 void log_event(const Event& event) {
@@ -64,6 +90,15 @@ bool check_status(const Status& status, const std::string_view action) {
     return false;
 }
 
+bool check_render_status(const native_ui::render::Status& status, const std::string_view action) {
+    if (status.ok()) {
+        return true;
+    }
+
+    std::cerr << action << " failed: " << status.message << '\n';
+    return false;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -73,7 +108,7 @@ int main(int argc, char** argv) {
     std::cout << "Framework: " << native_ui::kFrameworkName << '\n';
     std::cout << "Stage: " << native_ui::kFrameworkStage << '\n';
     std::cout << "Goal: " << native_ui::kFrameworkGoal << '\n';
-    std::cout << "Runtime: SDL3 host bootstrap\n";
+    std::cout << "Runtime: SDL3 + bgfx host bootstrap\n";
 
     auto app_result = App::create(AppDesc{.name = "hello_host"});
     if (!app_result.ok()) {
@@ -99,6 +134,27 @@ int main(int argc, char** argv) {
 
     const SizeI initial_size = window->size();
     std::cout << "Window created: " << initial_size.width << "x" << initial_size.height << '\n';
+
+    auto render_result = RenderContext::create(
+        RenderSurfaceDesc{
+            .native_window = window->native_handle(),
+            .size = initial_size
+        },
+        RenderConfig{
+            .backend = BackendKind::bgfx,
+            .renderer = RendererType::auto_select,
+            .vsync = true,
+            .debug = false
+        }
+    );
+    if (!render_result.ok()) {
+        std::cerr << "RenderContext::create failed: " << render_result.status.message << '\n';
+        return 1;
+    }
+
+    auto render = std::move(render_result.value);
+    std::cout << "Render backend: bgfx\n";
+    std::cout << "Renderer type: " << to_string(render->renderer()) << '\n';
 
     if (smoke_test) {
         if (!check_status(window->set_size(SizeI{kSmokeWidth, kSmokeHeight}), "set_size")) {
@@ -143,6 +199,9 @@ int main(int argc, char** argv) {
             switch (event.type) {
             case EventType::window_resized:
                 saw_resize = true;
+                if (!check_render_status(render->resize(event.size), "render.resize")) {
+                    return 1;
+                }
                 break;
             case EventType::key_down:
                 saw_key = true;
@@ -153,6 +212,16 @@ int main(int argc, char** argv) {
             default:
                 break;
             }
+        }
+
+        if (!check_render_status(render->begin_frame(), "render.begin_frame")) {
+            return 1;
+        }
+        if (!check_render_status(render->clear_main_view(ClearDesc{}), "render.clear_main_view")) {
+            return 1;
+        }
+        if (!check_render_status(render->end_frame(), "render.end_frame")) {
+            return 1;
         }
 
         if (smoke_test && saw_resize && saw_key && saw_mouse && frames > 5 && !quit_injected) {

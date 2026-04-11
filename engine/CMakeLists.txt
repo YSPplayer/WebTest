@@ -1,4 +1,5 @@
 add_subdirectory(platform)
+add_subdirectory(render)
 
 add_library(native_ui_engine INTERFACE)
 add_library(native_ui::engine ALIAS native_ui_engine)

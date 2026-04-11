@@ -5,6 +5,7 @@ target_link_libraries(
     PRIVATE
         native_ui::engine
         native_ui::platform
+        native_ui::render
 )
 
 set_target_properties(

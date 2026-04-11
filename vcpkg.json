@@ -4,6 +4,7 @@
   "description": "Native high-performance cross-platform desktop UI framework",
   "builtin-baseline": "e144a003ac142e0ee6722c42d94eb35dd18d20c8",
   "dependencies": [
+    "bgfx",
     "sdl3"
   ]
 }
