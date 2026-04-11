@@ -1,3 +1,5 @@
+add_subdirectory(platform)
+
 add_library(native_ui_engine INTERFACE)
 add_library(native_ui::engine ALIAS native_ui_engine)
 
@@ -8,4 +10,3 @@ target_include_directories(
 )
 
 target_compile_features(native_ui_engine INTERFACE cxx_std_20)
-

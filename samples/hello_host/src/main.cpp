@@ -1,19 +1,30 @@
 #include <chrono>
-#include <cstring>
 #include <iostream>
 #include <string_view>
 #include <thread>
 
-#include <SDL3/SDL.h>
-
 #include "native_ui/framework_info.hpp"
+#include "native_ui/platform/app.hpp"
+#include "native_ui/platform/testing.hpp"
 
 namespace {
+
+using native_ui::platform::App;
+using native_ui::platform::AppDesc;
+using native_ui::platform::Event;
+using native_ui::platform::EventType;
+using native_ui::platform::MouseButton;
+using native_ui::platform::PointI;
+using native_ui::platform::SizeI;
+using native_ui::platform::Status;
+using native_ui::platform::WindowDesc;
 
 constexpr int kInitialWidth = 960;
 constexpr int kInitialHeight = 640;
 constexpr int kSmokeWidth = 1024;
 constexpr int kSmokeHeight = 720;
+constexpr int kSmokeSpaceScancode = 44;
+constexpr int kSmokeSpaceKeycode = 32;
 
 bool has_arg(const int argc, char** argv, const std::string_view needle) {
     for (int i = 1; i < argc; ++i) {
@@ -24,19 +35,19 @@ bool has_arg(const int argc, char** argv, const std::string_view needle) {
     return false;
 }
 
-void log_event(const SDL_Event& event) {
+void log_event(const Event& event) {
     switch (event.type) {
-    case SDL_EVENT_WINDOW_RESIZED:
-        std::cout << "[window] resized to " << event.window.data1 << "x" << event.window.data2 << '\n';
+    case EventType::window_resized:
+        std::cout << "[window] resized to " << event.size.width << "x" << event.size.height << '\n';
         break;
-    case SDL_EVENT_KEY_DOWN:
-        std::cout << "[input] key down: scancode=" << event.key.scancode << '\n';
+    case EventType::key_down:
+        std::cout << "[input] key down: scancode=" << event.scancode << " keycode=" << event.keycode << '\n';
         break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        std::cout << "[input] mouse button down: button=" << static_cast<int>(event.button.button)
-                  << " x=" << event.button.x << " y=" << event.button.y << '\n';
+    case EventType::mouse_button_down:
+        std::cout << "[input] mouse button down: button=" << static_cast<int>(event.button)
+                  << " x=" << event.position.x << " y=" << event.position.y << '\n';
         break;
-    case SDL_EVENT_QUIT:
+    case EventType::quit_requested:
         std::cout << "[app] quit requested\n";
         break;
     default:
@@ -44,33 +55,13 @@ void log_event(const SDL_Event& event) {
     }
 }
 
-bool push_smoke_input_events(const SDL_WindowID window_id) {
-    SDL_Event key_event{};
-    key_event.type = SDL_EVENT_KEY_DOWN;
-    key_event.key.windowID = window_id;
-    key_event.key.scancode = SDL_SCANCODE_SPACE;
-    key_event.key.key = SDLK_SPACE;
-    key_event.key.down = true;
-
-    if (!SDL_PushEvent(&key_event)) {
-        std::cerr << "Failed to push synthetic key event: " << SDL_GetError() << '\n';
-        return false;
+bool check_status(const Status& status, const std::string_view action) {
+    if (status.ok()) {
+        return true;
     }
 
-    SDL_Event mouse_event{};
-    mouse_event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-    mouse_event.button.windowID = window_id;
-    mouse_event.button.button = SDL_BUTTON_LEFT;
-    mouse_event.button.down = true;
-    mouse_event.button.x = 120.0f;
-    mouse_event.button.y = 96.0f;
-
-    if (!SDL_PushEvent(&mouse_event)) {
-        std::cerr << "Failed to push synthetic mouse event: " << SDL_GetError() << '\n';
-        return false;
-    }
-
-    return true;
+    std::cerr << action << " failed: " << status.message << '\n';
+    return false;
 }
 
 }  // namespace
@@ -84,66 +75,79 @@ int main(int argc, char** argv) {
     std::cout << "Goal: " << native_ui::kFrameworkGoal << '\n';
     std::cout << "Runtime: SDL3 host bootstrap\n";
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::cerr << "SDL_Init failed: " << SDL_GetError() << '\n';
+    auto app_result = App::create(AppDesc{.name = "hello_host"});
+    if (!app_result.ok()) {
+        std::cerr << "App::create failed: " << app_result.status.message << '\n';
         return 1;
     }
 
-    SDL_Window* window = SDL_CreateWindow(
-        "hello_host",
-        kInitialWidth,
-        kInitialHeight,
-        SDL_WINDOW_RESIZABLE
-    );
+    auto app = std::move(app_result.value);
 
-    if (window == nullptr) {
-        std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << '\n';
-        SDL_Quit();
+    auto window_result = app->create_window(WindowDesc{
+        .title = "hello_host",
+        .size = SizeI{kInitialWidth, kInitialHeight},
+        .resizable = true,
+        .visible = true,
+        .high_dpi = true
+    });
+    if (!window_result.ok()) {
+        std::cerr << "create_window failed: " << window_result.status.message << '\n';
         return 1;
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (renderer == nullptr) {
-        std::cerr << "SDL_CreateRenderer failed: " << SDL_GetError() << '\n';
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
+    auto window = std::move(window_result.value);
 
-    std::cout << "Window created: " << kInitialWidth << "x" << kInitialHeight << '\n';
+    const SizeI initial_size = window->size();
+    std::cout << "Window created: " << initial_size.width << "x" << initial_size.height << '\n';
 
     if (smoke_test) {
-        SDL_SetWindowSize(window, kSmokeWidth, kSmokeHeight);
-        if (!push_smoke_input_events(SDL_GetWindowID(window))) {
-            SDL_DestroyRenderer(renderer);
-            SDL_DestroyWindow(window);
-            SDL_Quit();
+        if (!check_status(window->set_size(SizeI{kSmokeWidth, kSmokeHeight}), "set_size")) {
+            return 1;
+        }
+        if (!check_status(
+                native_ui::platform::testing::inject_key_down(
+                    *app,
+                    window->id(),
+                    kSmokeSpaceScancode,
+                    kSmokeSpaceKeycode,
+                    false
+                ),
+                "inject_key_down"
+            )) {
+            return 1;
+        }
+        if (!check_status(
+                native_ui::platform::testing::inject_mouse_button_down(
+                    *app,
+                    window->id(),
+                    MouseButton::left,
+                    PointI{120, 96}
+                ),
+                "inject_mouse_button_down"
+            )) {
             return 1;
         }
     }
 
-    bool running = true;
     bool saw_resize = false;
     bool saw_key = false;
     bool saw_mouse = false;
+    bool quit_injected = false;
     int frames = 0;
 
-    while (running) {
-        SDL_Event event{};
-        while (SDL_PollEvent(&event)) {
+    while (!app->quit_requested()) {
+        Event event{};
+        while (app->poll_event(event)) {
             log_event(event);
 
             switch (event.type) {
-            case SDL_EVENT_QUIT:
-                running = false;
-                break;
-            case SDL_EVENT_WINDOW_RESIZED:
+            case EventType::window_resized:
                 saw_resize = true;
                 break;
-            case SDL_EVENT_KEY_DOWN:
+            case EventType::key_down:
                 saw_key = true;
                 break;
-            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            case EventType::mouse_button_down:
                 saw_mouse = true;
                 break;
             default:
@@ -151,21 +155,18 @@ int main(int argc, char** argv) {
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 24, 28, 36, SDL_ALPHA_OPAQUE);
-        SDL_RenderClear(renderer);
-        SDL_RenderPresent(renderer);
-
-        if (smoke_test && saw_resize && saw_key && saw_mouse && frames > 5) {
+        if (smoke_test && saw_resize && saw_key && saw_mouse && frames > 5 && !quit_injected) {
             std::cout << "Smoke test passed.\n";
-            running = false;
+            if (!check_status(native_ui::platform::testing::inject_quit(*app), "inject_quit")) {
+                return 1;
+            }
+            quit_injected = true;
         }
 
         ++frames;
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    std::cout << "Host loop exited.\n";
     return 0;
 }
