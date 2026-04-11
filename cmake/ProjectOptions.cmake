@@ -4,7 +4,7 @@ function(native_ui_apply_global_settings)
     set(CMAKE_CXX_EXTENSIONS OFF PARENT_SCOPE)
 
     if(MSVC)
-        add_compile_options(/W4 /permissive- /Zc:__cplusplus)
+        add_compile_options(/W4 /permissive- /Zc:__cplusplus /Zc:preprocessor)
     else()
         add_compile_options(-Wall -Wextra -Wpedantic)
     endif()
@@ -13,4 +13,3 @@ function(native_ui_apply_global_settings)
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib PARENT_SCOPE)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin PARENT_SCOPE)
 endfunction()
-
