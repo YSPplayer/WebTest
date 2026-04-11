@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "native_ui/ui_core/layout_style.hpp"
 #include "native_ui/ui_core/style.hpp"
 #include "native_ui/ui_core/types.hpp"
 
@@ -47,6 +48,14 @@ public:
         return layout_rect_;
     }
 
+    [[nodiscard]] const LayoutStyle& layout_style() const noexcept {
+        return layout_style_;
+    }
+
+    [[nodiscard]] LayoutStyle& layout_style() noexcept {
+        return layout_style_;
+    }
+
 private:
     friend class Scene;
 
@@ -59,6 +68,7 @@ private:
     std::vector<NodeId> children_{};
     Style style_{};
     LayoutRect layout_rect_{};
+    LayoutStyle layout_style_{};
 };
 
 }  // namespace native_ui::ui_core
