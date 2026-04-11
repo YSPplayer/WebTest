@@ -22,6 +22,9 @@ Result<T> make_error_result(const StatusCode code, std::string message) {
 Scene::Scene(const SceneDesc& desc)
     : viewport_size_(desc.viewport_size), clear_enabled_(desc.clear_enabled), clear_(desc.clear) {
     nodes_.emplace(root_id_, Node(root_id_, NodeKind::root));
+    if (Node* root_node = find_node(root_id_)) {
+        root_node->style().pointer_events = PointerEvents::none;
+    }
     sync_root_layout();
 }
 

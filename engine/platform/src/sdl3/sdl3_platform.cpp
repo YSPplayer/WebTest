@@ -402,6 +402,51 @@ private:
         return Status::Ok();
     }
 
+    Status inject_mouse_button_up_for_testing(
+        const WindowId window_id,
+        const MouseButton button,
+        const PointI position
+    ) override {
+        const Uint8 sdl_button = translate_mouse_button(button);
+        if (sdl_button == 0) {
+            return make_status(StatusCode::invalid_argument, "Unsupported mouse button.");
+        }
+
+        SDL_Event event{};
+        event.type = SDL_EVENT_MOUSE_BUTTON_UP;
+        event.button.windowID = static_cast<SDL_WindowID>(window_id);
+        event.button.button = sdl_button;
+        event.button.down = false;
+        event.button.x = static_cast<float>(position.x);
+        event.button.y = static_cast<float>(position.y);
+
+        if (!SDL_PushEvent(&event)) {
+            return make_status(StatusCode::internal_error, SDL_GetError());
+        }
+
+        return Status::Ok();
+    }
+
+    Status inject_mouse_move_for_testing(
+        const WindowId window_id,
+        const PointI position,
+        const PointI delta
+    ) override {
+        SDL_Event event{};
+        event.type = SDL_EVENT_MOUSE_MOTION;
+        event.motion.windowID = static_cast<SDL_WindowID>(window_id);
+        event.motion.x = static_cast<float>(position.x);
+        event.motion.y = static_cast<float>(position.y);
+        event.motion.xrel = static_cast<float>(delta.x);
+        event.motion.yrel = static_cast<float>(delta.y);
+
+        if (!SDL_PushEvent(&event)) {
+            return make_status(StatusCode::internal_error, SDL_GetError());
+        }
+
+        return Status::Ok();
+    }
+
     std::shared_ptr<SdlContext> context_;
     bool quit_requested_{false};
 };
@@ -438,7 +483,14 @@ Status inject_mouse_button_down(App& app, const WindowId window_id, const MouseB
     return app.inject_mouse_button_down_for_testing(window_id, button, position);
 }
 
+Status inject_mouse_button_up(App& app, const WindowId window_id, const MouseButton button, const PointI position) {
+    return app.inject_mouse_button_up_for_testing(window_id, button, position);
+}
+
+Status inject_mouse_move(App& app, const WindowId window_id, const PointI position, const PointI delta) {
+    return app.inject_mouse_move_for_testing(window_id, position, delta);
+}
+
 }  // namespace testing
 
 }  // namespace native_ui::platform
-

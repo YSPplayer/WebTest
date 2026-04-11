@@ -2,6 +2,7 @@ add_subdirectory(platform)
 add_subdirectory(ui_paint)
 add_subdirectory(ui_core)
 add_subdirectory(ui_layout)
+add_subdirectory(ui_input)
 add_subdirectory(render)
 
 add_library(native_ui_engine INTERFACE)
