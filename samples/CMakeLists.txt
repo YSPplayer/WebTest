@@ -1,3 +1,3 @@
 add_subdirectory(hello_host)
 add_subdirectory(ui_rect_demo)
-
+add_subdirectory(ui_core_demo)
