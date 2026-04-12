@@ -32,11 +32,11 @@ UiEvent make_ui_event(
     const MouseButton button = MouseButton::unknown
 ) {
     return UiEvent{
-        type,
-        target_node_id,
-        window_position,
-        local_point_for_node(scene, target_node_id, window_position),
-        button
+        .type = type,
+        .target_node_id = target_node_id,
+        .window_position = window_position,
+        .local_position = local_point_for_node(scene, target_node_id, window_position),
+        .button = button
     };
 }
 

@@ -31,14 +31,31 @@ UiDispatchEvent make_dispatch_event(
     const UiDispatchPhase phase,
     const NodeId current_node_id
 ) {
+    PointI local_position{};
+    switch (ui_event.type) {
+    case UiEventType::hover_enter:
+    case UiEventType::hover_leave:
+    case UiEventType::mouse_move:
+    case UiEventType::mouse_down:
+    case UiEventType::mouse_up:
+        local_position = local_point_for_node(scene, current_node_id, ui_event.window_position);
+        break;
+    default:
+        break;
+    }
+
     return UiDispatchEvent{
-        ui_event.type,
-        phase,
-        current_node_id,
-        ui_event.target_node_id,
-        ui_event.window_position,
-        local_point_for_node(scene, current_node_id, ui_event.window_position),
-        ui_event.button
+        .type = ui_event.type,
+        .phase = phase,
+        .current_node_id = current_node_id,
+        .target_node_id = ui_event.target_node_id,
+        .window_position = ui_event.window_position,
+        .local_position = local_position,
+        .button = ui_event.button,
+        .scancode = ui_event.scancode,
+        .keycode = ui_event.keycode,
+        .repeat = ui_event.repeat,
+        .modifiers = ui_event.modifiers
     };
 }
 
@@ -63,6 +80,8 @@ bool should_propagate(const UiEventType type) {
     case UiEventType::mouse_move:
     case UiEventType::mouse_down:
     case UiEventType::mouse_up:
+    case UiEventType::key_down:
+    case UiEventType::key_up:
         return true;
     default:
         return false;

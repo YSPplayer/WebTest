@@ -11,7 +11,11 @@ enum class UiEventType {
     hover_leave,
     mouse_move,
     mouse_down,
-    mouse_up
+    mouse_up,
+    focus_in,
+    focus_out,
+    key_down,
+    key_up
 };
 
 enum class UiDispatchPhase {
@@ -40,6 +44,10 @@ struct UiEvent {
     native_ui::platform::PointI window_position{};
     native_ui::platform::PointI local_position{};
     native_ui::platform::MouseButton button{native_ui::platform::MouseButton::unknown};
+    int scancode{};
+    int keycode{};
+    bool repeat{};
+    native_ui::platform::KeyModifiers modifiers{native_ui::platform::KeyModifiers::none};
 };
 
 struct UiDispatchEvent {
@@ -50,6 +58,10 @@ struct UiDispatchEvent {
     native_ui::platform::PointI window_position{};
     native_ui::platform::PointI local_position{};
     native_ui::platform::MouseButton button{native_ui::platform::MouseButton::unknown};
+    int scancode{};
+    int keycode{};
+    bool repeat{};
+    native_ui::platform::KeyModifiers modifiers{native_ui::platform::KeyModifiers::none};
 };
 
 }  // namespace native_ui::ui_input

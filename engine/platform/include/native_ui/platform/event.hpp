@@ -28,7 +28,7 @@ struct Event {
     int scancode{};
     int keycode{};
     bool repeat{};
+    KeyModifiers modifiers{KeyModifiers::none};
 };
 
 }  // namespace native_ui::platform
-

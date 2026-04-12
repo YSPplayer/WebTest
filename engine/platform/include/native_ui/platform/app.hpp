@@ -13,7 +13,21 @@ class App;
 namespace testing {
 
 Status inject_quit(App& app);
-Status inject_key_down(App& app, WindowId window_id, int scancode, int keycode, bool repeat = false);
+Status inject_key_down(
+    App& app,
+    WindowId window_id,
+    int scancode,
+    int keycode,
+    bool repeat = false,
+    KeyModifiers modifiers = KeyModifiers::none
+);
+Status inject_key_up(
+    App& app,
+    WindowId window_id,
+    int scancode,
+    int keycode,
+    KeyModifiers modifiers = KeyModifiers::none
+);
 Status inject_mouse_button_down(App& app, WindowId window_id, MouseButton button, PointI position);
 Status inject_mouse_button_up(App& app, WindowId window_id, MouseButton button, PointI position);
 Status inject_mouse_move(App& app, WindowId window_id, PointI position, PointI delta = {});
@@ -35,13 +49,39 @@ public:
 
 private:
     friend Status testing::inject_quit(App& app);
-    friend Status testing::inject_key_down(App& app, WindowId window_id, int scancode, int keycode, bool repeat);
+    friend Status testing::inject_key_down(
+        App& app,
+        WindowId window_id,
+        int scancode,
+        int keycode,
+        bool repeat,
+        KeyModifiers modifiers
+    );
+    friend Status testing::inject_key_up(
+        App& app,
+        WindowId window_id,
+        int scancode,
+        int keycode,
+        KeyModifiers modifiers
+    );
     friend Status testing::inject_mouse_button_down(App& app, WindowId window_id, MouseButton button, PointI position);
     friend Status testing::inject_mouse_button_up(App& app, WindowId window_id, MouseButton button, PointI position);
     friend Status testing::inject_mouse_move(App& app, WindowId window_id, PointI position, PointI delta);
 
     virtual Status inject_quit_for_testing() = 0;
-    virtual Status inject_key_down_for_testing(WindowId window_id, int scancode, int keycode, bool repeat) = 0;
+    virtual Status inject_key_down_for_testing(
+        WindowId window_id,
+        int scancode,
+        int keycode,
+        bool repeat,
+        KeyModifiers modifiers
+    ) = 0;
+    virtual Status inject_key_up_for_testing(
+        WindowId window_id,
+        int scancode,
+        int keycode,
+        KeyModifiers modifiers
+    ) = 0;
     virtual Status inject_mouse_button_down_for_testing(WindowId window_id, MouseButton button, PointI position) = 0;
     virtual Status inject_mouse_button_up_for_testing(WindowId window_id, MouseButton button, PointI position) = 0;
     virtual Status inject_mouse_move_for_testing(WindowId window_id, PointI position, PointI delta) = 0;

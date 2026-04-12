@@ -2,8 +2,10 @@ add_library(
     native_ui_ui_input
     STATIC
         src/event_dispatcher.cpp
+        src/focus_manager.cpp
         src/hit_tester.cpp
         src/input_router.cpp
+        src/key_router.cpp
 )
 
 add_library(native_ui::ui_input ALIAS native_ui_ui_input)

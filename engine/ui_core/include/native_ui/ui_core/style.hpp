@@ -9,11 +9,19 @@ enum class PointerEvents {
     none
 };
 
+enum class FocusPolicy {
+    none = 0,
+    pointer,
+    keyboard,
+    pointer_and_keyboard
+};
+
 struct Style {
     bool visible{true};
     bool clip_children{false};
     bool has_background{false};
     PointerEvents pointer_events{PointerEvents::auto_mode};
+    FocusPolicy focus_policy{FocusPolicy::none};
     native_ui::ui_paint::PaintColor background_color{};
 };
 

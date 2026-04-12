@@ -54,6 +54,40 @@ Uint8 translate_mouse_button(const MouseButton button) {
     }
 }
 
+KeyModifiers translate_key_modifiers(const SDL_Keymod modifiers) {
+    KeyModifiers result = KeyModifiers::none;
+    if ((modifiers & SDL_KMOD_SHIFT) != 0) {
+        result |= KeyModifiers::shift;
+    }
+    if ((modifiers & SDL_KMOD_CTRL) != 0) {
+        result |= KeyModifiers::ctrl;
+    }
+    if ((modifiers & SDL_KMOD_ALT) != 0) {
+        result |= KeyModifiers::alt;
+    }
+    if ((modifiers & SDL_KMOD_GUI) != 0) {
+        result |= KeyModifiers::meta;
+    }
+    return result;
+}
+
+SDL_Keymod translate_key_modifiers(const KeyModifiers modifiers) {
+    SDL_Keymod result = SDL_KMOD_NONE;
+    if (has_modifier(modifiers, KeyModifiers::shift)) {
+        result = static_cast<SDL_Keymod>(result | SDL_KMOD_SHIFT);
+    }
+    if (has_modifier(modifiers, KeyModifiers::ctrl)) {
+        result = static_cast<SDL_Keymod>(result | SDL_KMOD_CTRL);
+    }
+    if (has_modifier(modifiers, KeyModifiers::alt)) {
+        result = static_cast<SDL_Keymod>(result | SDL_KMOD_ALT);
+    }
+    if (has_modifier(modifiers, KeyModifiers::meta)) {
+        result = static_cast<SDL_Keymod>(result | SDL_KMOD_GUI);
+    }
+    return result;
+}
+
 NativeWindowHandle query_native_handle(SDL_Window* window) {
     if (window == nullptr) {
         return {};
@@ -123,6 +157,7 @@ Event translate_event(const SDL_Event& sdl_event) {
         event.scancode = static_cast<int>(sdl_event.key.scancode);
         event.keycode = static_cast<int>(sdl_event.key.key);
         event.repeat = sdl_event.key.repeat;
+        event.modifiers = translate_key_modifiers(static_cast<SDL_Keymod>(sdl_event.key.mod));
         break;
 
     case SDL_EVENT_KEY_UP:
@@ -131,6 +166,7 @@ Event translate_event(const SDL_Event& sdl_event) {
         event.scancode = static_cast<int>(sdl_event.key.scancode);
         event.keycode = static_cast<int>(sdl_event.key.key);
         event.repeat = sdl_event.key.repeat;
+        event.modifiers = translate_key_modifiers(static_cast<SDL_Keymod>(sdl_event.key.mod));
         break;
 
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -360,7 +396,8 @@ private:
         const WindowId window_id,
         const int scancode,
         const int keycode,
-        const bool repeat
+        const bool repeat,
+        const KeyModifiers modifiers
     ) override {
         SDL_Event event{};
         event.type = SDL_EVENT_KEY_DOWN;
@@ -369,6 +406,29 @@ private:
         event.key.key = static_cast<SDL_Keycode>(keycode);
         event.key.down = true;
         event.key.repeat = repeat;
+        event.key.mod = translate_key_modifiers(modifiers);
+
+        if (!SDL_PushEvent(&event)) {
+            return make_status(StatusCode::internal_error, SDL_GetError());
+        }
+
+        return Status::Ok();
+    }
+
+    Status inject_key_up_for_testing(
+        const WindowId window_id,
+        const int scancode,
+        const int keycode,
+        const KeyModifiers modifiers
+    ) override {
+        SDL_Event event{};
+        event.type = SDL_EVENT_KEY_UP;
+        event.key.windowID = static_cast<SDL_WindowID>(window_id);
+        event.key.scancode = static_cast<SDL_Scancode>(scancode);
+        event.key.key = static_cast<SDL_Keycode>(keycode);
+        event.key.down = false;
+        event.key.repeat = false;
+        event.key.mod = translate_key_modifiers(modifiers);
 
         if (!SDL_PushEvent(&event)) {
             return make_status(StatusCode::internal_error, SDL_GetError());
@@ -475,8 +535,25 @@ Status inject_quit(App& app) {
     return app.inject_quit_for_testing();
 }
 
-Status inject_key_down(App& app, const WindowId window_id, const int scancode, const int keycode, const bool repeat) {
-    return app.inject_key_down_for_testing(window_id, scancode, keycode, repeat);
+Status inject_key_down(
+    App& app,
+    const WindowId window_id,
+    const int scancode,
+    const int keycode,
+    const bool repeat,
+    const KeyModifiers modifiers
+) {
+    return app.inject_key_down_for_testing(window_id, scancode, keycode, repeat, modifiers);
+}
+
+Status inject_key_up(
+    App& app,
+    const WindowId window_id,
+    const int scancode,
+    const int keycode,
+    const KeyModifiers modifiers
+) {
+    return app.inject_key_up_for_testing(window_id, scancode, keycode, modifiers);
 }
 
 Status inject_mouse_button_down(App& app, const WindowId window_id, const MouseButton button, const PointI position) {
