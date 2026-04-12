@@ -4,6 +4,8 @@ add_subdirectory(ui_core)
 add_subdirectory(ui_layout)
 add_subdirectory(ui_input)
 add_subdirectory(ui_runtime)
+add_subdirectory(script)
+add_subdirectory(bridge)
 add_subdirectory(render)
 
 add_library(native_ui_engine INTERFACE)

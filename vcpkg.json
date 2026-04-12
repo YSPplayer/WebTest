@@ -13,6 +13,7 @@
         "tools"
       ]
     },
+    "quickjs-ng",
     "sdl3",
     "yoga"
   ]
