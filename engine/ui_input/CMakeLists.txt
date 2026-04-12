@@ -1,6 +1,7 @@
 add_library(
     native_ui_ui_input
     STATIC
+        src/event_dispatcher.cpp
         src/hit_tester.cpp
         src/input_router.cpp
 )
