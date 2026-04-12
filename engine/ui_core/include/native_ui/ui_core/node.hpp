@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "native_ui/ui_core/layout_style.hpp"
+#include "native_ui/ui_core/semantics.hpp"
 #include "native_ui/ui_core/style.hpp"
 #include "native_ui/ui_core/types.hpp"
 
@@ -56,6 +57,14 @@ public:
         return layout_style_;
     }
 
+    [[nodiscard]] const Semantics& semantics() const noexcept {
+        return semantics_;
+    }
+
+    [[nodiscard]] Semantics& semantics() noexcept {
+        return semantics_;
+    }
+
 private:
     friend class Scene;
 
@@ -69,6 +78,7 @@ private:
     Style style_{};
     LayoutRect layout_rect_{};
     LayoutStyle layout_style_{};
+    Semantics semantics_{};
 };
 
 }  // namespace native_ui::ui_core

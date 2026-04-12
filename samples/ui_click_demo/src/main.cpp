@@ -11,6 +11,7 @@
 #include "native_ui/render/context.hpp"
 #include "native_ui/ui_core/painter.hpp"
 #include "native_ui/ui_core/scene.hpp"
+#include "native_ui/ui_input/default_action_engine.hpp"
 #include "native_ui/ui_input/event_dispatcher.hpp"
 #include "native_ui/ui_input/focus_manager.hpp"
 #include "native_ui/ui_input/input_router.hpp"
@@ -23,7 +24,6 @@ using native_ui::platform::App;
 using native_ui::platform::AppDesc;
 using native_ui::platform::Event;
 using native_ui::platform::EventType;
-using native_ui::platform::KeyModifiers;
 using native_ui::platform::MouseButton;
 using native_ui::platform::PointI;
 using native_ui::platform::SizeI;
@@ -48,7 +48,10 @@ using native_ui::ui_core::Painter;
 using native_ui::ui_core::PointerEvents;
 using native_ui::ui_core::Scene;
 using native_ui::ui_core::SceneDesc;
+using native_ui::ui_core::SemanticRole;
+using native_ui::ui_input::DefaultActionEngine;
 using native_ui::ui_input::DispatchControl;
+using native_ui::ui_input::DispatchResult;
 using native_ui::ui_input::EventDispatcher;
 using native_ui::ui_input::FocusManager;
 using native_ui::ui_input::InputRouter;
@@ -61,13 +64,13 @@ using native_ui::ui_layout::LayoutEngine;
 using native_ui::ui_paint::PaintClear;
 using native_ui::ui_paint::PaintColor;
 
-constexpr int kInitialWidth = 1080;
-constexpr int kInitialHeight = 680;
-constexpr int kSmokeWidth = 1360;
-constexpr int kSmokeHeight = 860;
+constexpr int kInitialWidth = 1120;
+constexpr int kInitialHeight = 700;
+constexpr int kSmokeWidth = 1420;
+constexpr int kSmokeHeight = 900;
 constexpr int kTabKeycode = '\t';
-constexpr int kKeycodeA = 'a';
-constexpr int kKeycodeB = 'b';
+constexpr int kEnterKeycode = '\r';
+constexpr int kSpaceKeycode = ' ';
 
 constexpr std::array<PaintColor, 3> kBaseColors{
     PaintColor{214, 84, 65, 255},
@@ -79,14 +82,26 @@ constexpr PaintColor kFocusedColor{244, 186, 58, 255};
 struct FocusRecord {
     UiEventType type{UiEventType::none};
     NodeId target_node_id{};
+
+    [[nodiscard]] bool operator==(const FocusRecord& other) const noexcept {
+        return type == other.type && target_node_id == other.target_node_id;
+    }
 };
 
-struct KeyRecord {
-    UiEventType type{UiEventType::none};
+struct ClickRecord {
     UiDispatchPhase phase{UiDispatchPhase::none};
     NodeId current_node_id{};
     NodeId target_node_id{};
     int keycode{};
+    MouseButton button{MouseButton::unknown};
+
+    [[nodiscard]] bool operator==(const ClickRecord& other) const noexcept {
+        return phase == other.phase &&
+            current_node_id == other.current_node_id &&
+            target_node_id == other.target_node_id &&
+            keycode == other.keycode &&
+            button == other.button;
+    }
 };
 
 bool has_arg(const int argc, char** argv, const std::string_view needle) {
@@ -119,18 +134,20 @@ const char* to_string(const RendererType renderer_type) {
 
 const char* to_string(const UiEventType type) {
     switch (type) {
+    case UiEventType::click:
+        return "click";
     case UiEventType::focus_in:
         return "focus_in";
     case UiEventType::focus_out:
         return "focus_out";
-    case UiEventType::key_down:
-        return "key_down";
-    case UiEventType::key_up:
-        return "key_up";
     case UiEventType::mouse_down:
         return "mouse_down";
     case UiEventType::mouse_up:
         return "mouse_up";
+    case UiEventType::key_down:
+        return "key_down";
+    case UiEventType::key_up:
+        return "key_up";
     default:
         return "other";
     }
@@ -176,13 +193,11 @@ bool check_layout_status(const native_ui::ui_layout::Status& status, const std::
     return false;
 }
 
-native_ui::ui_core::Result<NodeId> add_box(
+native_ui::ui_core::Result<NodeId> add_button(
     Scene& scene,
     const NodeId parent_id,
     const PaintColor color,
-    const LayoutStyle& layout_style,
-    const PointerEvents pointer_events = PointerEvents::none,
-    const FocusPolicy focus_policy = FocusPolicy::none
+    const LayoutStyle& layout_style
 ) {
     auto node_result = scene.create_node(NodeKind::box);
     if (!node_result.ok()) {
@@ -202,9 +217,10 @@ native_ui::ui_core::Result<NodeId> add_box(
 
     node->style().has_background = true;
     node->style().background_color = color;
-    node->style().pointer_events = pointer_events;
-    node->style().focus_policy = focus_policy;
+    node->style().pointer_events = PointerEvents::auto_mode;
+    node->style().focus_policy = FocusPolicy::pointer_and_keyboard;
     node->layout_style() = layout_style;
+    node->semantics().role = SemanticRole::button;
 
     const auto attach_status = scene.append_child(parent_id, node_result.value);
     if (!attach_status.ok()) {
@@ -217,7 +233,7 @@ native_ui::ui_core::Result<NodeId> add_box(
     return node_result;
 }
 
-bool seed_scene(Scene& scene, NodeId& strip_id, std::array<NodeId, 3>& card_ids) {
+bool seed_scene(Scene& scene, NodeId& strip_id, std::array<NodeId, 3>& button_ids) {
     Node* root = scene.root();
     if (root == nullptr) {
         return false;
@@ -228,79 +244,77 @@ bool seed_scene(Scene& scene, NodeId& strip_id, std::array<NodeId, 3>& card_ids)
         .width = LayoutValue::Undefined(),
         .height = LayoutValue::Undefined(),
         .margin = LayoutEdges{},
-        .padding = LayoutEdges::All(30.0f),
+        .padding = LayoutEdges::All(32.0f),
         .flex_direction = FlexDirection::column,
         .justify_content = JustifyContent::center,
         .align_items = AlignItems::stretch,
         .flex_grow = 0.0f
     };
 
-    const auto strip = add_box(
-        scene,
-        scene.root_id(),
-        PaintColor{24, 30, 43, 220},
-        LayoutStyle{
-            .enabled = true,
-            .width = LayoutValue::Undefined(),
-            .height = LayoutValue::Undefined(),
-            .margin = LayoutEdges{},
-            .padding = LayoutEdges::All(20.0f),
-            .flex_direction = FlexDirection::row,
-            .justify_content = JustifyContent::center,
-            .align_items = AlignItems::center,
-            .flex_grow = 1.0f
-        },
-        PointerEvents::none,
-        FocusPolicy::none
-    );
-    if (!strip.ok()) {
-        std::cerr << "create strip failed: " << strip.status.message << '\n';
+    auto strip_result = scene.create_node(NodeKind::box);
+    if (!strip_result.ok()) {
         return false;
     }
 
-    strip_id = strip.value;
-    for (std::size_t index = 0; index < card_ids.size(); ++index) {
-        const auto card = add_box(
+    Node* strip = scene.find_node(strip_result.value);
+    if (strip == nullptr) {
+        return false;
+    }
+
+    strip->style().has_background = true;
+    strip->style().background_color = PaintColor{24, 30, 43, 220};
+    strip->style().pointer_events = PointerEvents::none;
+    strip->layout_style() = LayoutStyle{
+        .enabled = true,
+        .width = LayoutValue::Undefined(),
+        .height = LayoutValue::Undefined(),
+        .margin = LayoutEdges{},
+        .padding = LayoutEdges::All(20.0f),
+        .flex_direction = FlexDirection::row,
+        .justify_content = JustifyContent::center,
+        .align_items = AlignItems::center,
+        .flex_grow = 1.0f
+    };
+    if (!scene.append_child(scene.root_id(), strip_result.value).ok()) {
+        return false;
+    }
+
+    strip_id = strip_result.value;
+    for (std::size_t index = 0; index < button_ids.size(); ++index) {
+        const auto button = add_button(
             scene,
             strip_id,
             kBaseColors[index],
             LayoutStyle{
                 .enabled = true,
-                .width = LayoutValue::Points(220.0f),
-                .height = LayoutValue::Points(220.0f),
-                .margin = LayoutEdges{0.0f, 0.0f, index + 1 < card_ids.size() ? 18.0f : 0.0f, 0.0f},
+                .width = LayoutValue::Points(230.0f),
+                .height = LayoutValue::Points(230.0f),
+                .margin = LayoutEdges{0.0f, 0.0f, index + 1 < button_ids.size() ? 18.0f : 0.0f, 0.0f},
                 .padding = LayoutEdges::All(12.0f),
                 .flex_direction = FlexDirection::column,
                 .justify_content = JustifyContent::center,
                 .align_items = AlignItems::center,
                 .flex_grow = 0.0f
-            },
-            PointerEvents::auto_mode,
-            FocusPolicy::pointer_and_keyboard
+            }
         );
-        if (!card.ok()) {
-            std::cerr << "create card failed: " << card.status.message << '\n';
+        if (!button.ok()) {
+            std::cerr << "create button failed: " << button.status.message << '\n';
             return false;
         }
-
-        card_ids[index] = card.value;
+        button_ids[index] = button.value;
     }
 
     return true;
 }
 
-void apply_visual_state(
-    Scene& scene,
-    const std::array<NodeId, 3>& card_ids,
-    const NodeId focused_node_id
-) {
-    for (std::size_t index = 0; index < card_ids.size(); ++index) {
-        Node* card = scene.find_node(card_ids[index]);
-        if (card == nullptr) {
+void apply_visual_state(Scene& scene, const std::array<NodeId, 3>& button_ids, const NodeId focused_node_id) {
+    for (std::size_t index = 0; index < button_ids.size(); ++index) {
+        Node* button = scene.find_node(button_ids[index]);
+        if (button == nullptr) {
             continue;
         }
 
-        card->style().background_color = card_ids[index] == focused_node_id
+        button->style().background_color = button_ids[index] == focused_node_id
             ? kFocusedColor
             : kBaseColors[index];
     }
@@ -321,23 +335,13 @@ bool record_equals(const std::vector<T>& actual, const std::vector<T>& expected)
     return true;
 }
 
-bool operator==(const FocusRecord& lhs, const FocusRecord& rhs) {
-    return lhs.type == rhs.type && lhs.target_node_id == rhs.target_node_id;
-}
-
-bool operator==(const KeyRecord& lhs, const KeyRecord& rhs) {
-    return lhs.type == rhs.type && lhs.phase == rhs.phase &&
-        lhs.current_node_id == rhs.current_node_id &&
-        lhs.target_node_id == rhs.target_node_id &&
-        lhs.keycode == rhs.keycode;
-}
-
 void log_dispatch(const UiDispatchEvent& event) {
     std::cout << "[dispatch] " << to_string(event.type)
               << " phase=" << to_string(event.phase)
               << " current=" << event.current_node_id
               << " target=" << event.target_node_id
-              << " keycode=" << event.keycode << '\n';
+              << " keycode=" << event.keycode
+              << " button=" << static_cast<int>(event.button) << '\n';
 }
 
 }  // namespace
@@ -345,13 +349,13 @@ void log_dispatch(const UiDispatchEvent& event) {
 int main(int argc, char** argv) {
     const bool smoke_test = has_arg(argc, argv, "--smoke-test");
 
-    std::cout << "Sample target: ui_focus_demo\n";
+    std::cout << "Sample target: ui_click_demo\n";
     std::cout << "Framework: " << native_ui::kFrameworkName << '\n';
     std::cout << "Stage: " << native_ui::kFrameworkStage << '\n';
     std::cout << "Goal: " << native_ui::kFrameworkGoal << '\n';
-    std::cout << "Runtime: ui_focus + key_router + ui_layout + ui_core + SDL3 + bgfx\n";
+    std::cout << "Runtime: default_action click semantics + ui_input + SDL3 + bgfx\n";
 
-    auto app_result = App::create(AppDesc{.name = "ui_focus_demo"});
+    auto app_result = App::create(AppDesc{.name = "ui_click_demo"});
     if (!app_result.ok()) {
         std::cerr << "App::create failed: " << app_result.status.message << '\n';
         return 1;
@@ -360,7 +364,7 @@ int main(int argc, char** argv) {
     auto app = std::move(app_result.value);
 
     auto window_result = app->create_window(WindowDesc{
-        .title = "ui_focus_demo",
+        .title = "ui_click_demo",
         .size = SizeI{kInitialWidth, kInitialHeight},
         .resizable = true,
         .visible = true,
@@ -408,12 +412,12 @@ int main(int argc, char** argv) {
     });
 
     NodeId strip_id = native_ui::ui_core::kInvalidNodeId;
-    std::array<NodeId, 3> card_ids{
+    std::array<NodeId, 3> button_ids{
         native_ui::ui_core::kInvalidNodeId,
         native_ui::ui_core::kInvalidNodeId,
         native_ui::ui_core::kInvalidNodeId
     };
-    if (!seed_scene(scene, strip_id, card_ids)) {
+    if (!seed_scene(scene, strip_id, button_ids)) {
         return 1;
     }
 
@@ -423,6 +427,7 @@ int main(int argc, char** argv) {
     FocusManager focus_manager{};
     KeyRouter key_router{};
     EventDispatcher dispatcher{};
+    DefaultActionEngine default_action_engine{};
 
     if (!check_layout_status(layout_engine.compute(scene), "layout.compute.initial")) {
         return 1;
@@ -435,24 +440,30 @@ int main(int argc, char** argv) {
     }
 
     bool saw_resize = false;
+    bool mouse_click1_down_injected = false;
+    bool mouse_click1_up_injected = false;
+    bool miss_down_injected = false;
+    bool miss_up_injected = false;
     bool tab_down_injected = false;
     bool tab_up_injected = false;
-    bool a_down_injected = false;
-    bool a_up_injected = false;
-    bool shift_tab_down_injected = false;
-    bool shift_tab_up_injected = false;
-    bool click_down_injected = false;
-    bool click_up_injected = false;
-    bool b_down_injected = false;
-    bool b_up_injected = false;
+    bool enter_down_injected = false;
+    bool enter_up_injected = false;
+    bool space_down_injected = false;
+    bool space_up_injected = false;
+    bool prevent_down_injected = false;
+    bool prevent_up_injected = false;
     bool quit_injected = false;
+    bool prevented_default_seen = false;
     int frames = 0;
-    std::array<PointI, 3> card_points{};
-    std::vector<FocusRecord> focus_records{};
-    std::vector<KeyRecord> key_records{};
 
-    auto dispatch_ui_event = [&](const UiEvent& ui_event) {
-        (void)dispatcher.dispatch(
+    std::array<PointI, 3> button_points{};
+    PointI miss_point{};
+
+    std::vector<FocusRecord> focus_records{};
+    std::vector<ClickRecord> click_records{};
+
+    auto dispatch_ui_event = [&](const UiEvent& ui_event) -> DispatchResult {
+        return dispatcher.dispatch(
             scene,
             ui_event,
             [&](const UiDispatchEvent& dispatch_event) {
@@ -464,20 +475,52 @@ int main(int argc, char** argv) {
                         dispatch_event.type,
                         dispatch_event.target_node_id
                     });
-                } else if (dispatch_event.type == UiEventType::key_down ||
-                           dispatch_event.type == UiEventType::key_up) {
-                    key_records.push_back(KeyRecord{
-                        dispatch_event.type,
+                } else if (dispatch_event.type == UiEventType::click) {
+                    click_records.push_back(ClickRecord{
                         dispatch_event.phase,
                         dispatch_event.current_node_id,
                         dispatch_event.target_node_id,
-                        dispatch_event.keycode
+                        dispatch_event.keycode,
+                        dispatch_event.button
                     });
+                }
+
+                if (dispatch_event.type == UiEventType::mouse_up &&
+                    dispatch_event.phase == UiDispatchPhase::target &&
+                    dispatch_event.target_node_id == button_ids[2]) {
+                    return DispatchControl::prevent_default;
                 }
 
                 return DispatchControl::continue_dispatch;
             }
         );
+    };
+
+    auto process_pointer_ui_event = [&](const UiEvent& ui_event) {
+        const DispatchResult dispatch_result = dispatch_ui_event(ui_event);
+        if (ui_event.type == UiEventType::mouse_up &&
+            ui_event.target_node_id == button_ids[2] &&
+            dispatch_result.default_prevented) {
+            prevented_default_seen = true;
+        }
+
+        const auto focus_events = focus_manager.handle_pointer_event(scene, ui_event);
+        for (const UiEvent& focus_event : focus_events) {
+            (void)dispatch_ui_event(focus_event);
+        }
+
+        const auto semantic_events = default_action_engine.handle_post_dispatch(scene, ui_event, dispatch_result);
+        for (const UiEvent& semantic_event : semantic_events) {
+            (void)dispatch_ui_event(semantic_event);
+        }
+    };
+
+    auto process_key_ui_event = [&](const UiEvent& ui_event) {
+        const DispatchResult dispatch_result = dispatch_ui_event(ui_event);
+        const auto semantic_events = default_action_engine.handle_post_dispatch(scene, ui_event, dispatch_result);
+        for (const UiEvent& semantic_event : semantic_events) {
+            (void)dispatch_ui_event(semantic_event);
+        }
     };
 
     while (!app->quit_requested()) {
@@ -495,17 +538,12 @@ int main(int argc, char** argv) {
 
             const auto pointer_ui_events = input_router.route(scene, event);
             for (const UiEvent& ui_event : pointer_ui_events) {
-                dispatch_ui_event(ui_event);
-
-                const auto focus_ui_events = focus_manager.handle_pointer_event(scene, ui_event);
-                for (const UiEvent& focus_ui_event : focus_ui_events) {
-                    dispatch_ui_event(focus_ui_event);
-                }
+                process_pointer_ui_event(ui_event);
             }
 
             const auto key_ui_events = key_router.route(scene, event, focus_manager);
             for (const UiEvent& ui_event : key_ui_events) {
-                dispatch_ui_event(ui_event);
+                process_key_ui_event(ui_event);
             }
         }
 
@@ -513,157 +551,179 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        apply_visual_state(scene, card_ids, focus_manager.focused_node_id());
+        apply_visual_state(scene, button_ids, focus_manager.focused_node_id());
 
         if (smoke_test && saw_resize) {
-            for (std::size_t index = 0; index < card_ids.size(); ++index) {
-                const Node* card = scene.find_node(card_ids[index]);
-                if (card == nullptr) {
+            for (std::size_t index = 0; index < button_ids.size(); ++index) {
+                const Node* button = scene.find_node(button_ids[index]);
+                if (button == nullptr) {
                     continue;
                 }
 
-                card_points[index] = PointI{
-                    static_cast<int>(card->layout_rect().x + card->layout_rect().width * 0.5f),
-                    static_cast<int>(card->layout_rect().y + card->layout_rect().height * 0.5f)
+                button_points[index] = PointI{
+                    static_cast<int>(button->layout_rect().x + button->layout_rect().width * 0.5f),
+                    static_cast<int>(button->layout_rect().y + button->layout_rect().height * 0.5f)
                 };
             }
 
-            if (!tab_down_injected && frames > 2) {
+            miss_point = PointI{10, 10};
+
+            if (!mouse_click1_down_injected && frames > 2) {
+                if (!check_status(
+                        native_ui::platform::testing::inject_mouse_button_down(
+                            *app,
+                            window->id(),
+                            MouseButton::left,
+                            button_points[0]
+                        ),
+                        "inject_mouse_button_down.button1"
+                    )) {
+                    return 1;
+                }
+                mouse_click1_down_injected = true;
+            } else if (mouse_click1_down_injected && !mouse_click1_up_injected && frames > 3) {
+                if (!check_status(
+                        native_ui::platform::testing::inject_mouse_button_up(
+                            *app,
+                            window->id(),
+                            MouseButton::left,
+                            button_points[0]
+                        ),
+                        "inject_mouse_button_up.button1"
+                    )) {
+                    return 1;
+                }
+                mouse_click1_up_injected = true;
+            } else if (mouse_click1_up_injected && !miss_down_injected && frames > 5) {
+                if (!check_status(
+                        native_ui::platform::testing::inject_mouse_button_down(
+                            *app,
+                            window->id(),
+                            MouseButton::left,
+                            button_points[0]
+                        ),
+                        "inject_mouse_button_down.miss"
+                    )) {
+                    return 1;
+                }
+                miss_down_injected = true;
+            } else if (miss_down_injected && !miss_up_injected && frames > 6) {
+                if (!check_status(
+                        native_ui::platform::testing::inject_mouse_button_up(
+                            *app,
+                            window->id(),
+                            MouseButton::left,
+                            miss_point
+                        ),
+                        "inject_mouse_button_up.miss"
+                    )) {
+                    return 1;
+                }
+                miss_up_injected = true;
+            } else if (miss_up_injected && !tab_down_injected && frames > 8) {
                 if (!check_status(
                         native_ui::platform::testing::inject_key_down(
                             *app,
                             window->id(),
                             kTabKeycode,
-                            kTabKeycode,
-                            false,
-                            KeyModifiers::none
+                            kTabKeycode
                         ),
                         "inject_key_down.tab"
                     )) {
                     return 1;
                 }
                 tab_down_injected = true;
-            } else if (tab_down_injected && !tab_up_injected && frames > 3) {
+            } else if (tab_down_injected && !tab_up_injected && frames > 9) {
                 if (!check_status(
                         native_ui::platform::testing::inject_key_up(
                             *app,
                             window->id(),
                             kTabKeycode,
-                            kTabKeycode,
-                            KeyModifiers::none
+                            kTabKeycode
                         ),
                         "inject_key_up.tab"
                     )) {
                     return 1;
                 }
                 tab_up_injected = true;
-            } else if (tab_up_injected && !a_down_injected && frames > 5) {
+            } else if (tab_up_injected && !enter_down_injected && frames > 11) {
                 if (!check_status(
                         native_ui::platform::testing::inject_key_down(
                             *app,
                             window->id(),
-                            kKeycodeA,
-                            kKeycodeA
+                            kEnterKeycode,
+                            kEnterKeycode
                         ),
-                        "inject_key_down.a"
+                        "inject_key_down.enter"
                     )) {
                     return 1;
                 }
-                a_down_injected = true;
-            } else if (a_down_injected && !a_up_injected && frames > 6) {
+                enter_down_injected = true;
+            } else if (enter_down_injected && !enter_up_injected && frames > 12) {
                 if (!check_status(
                         native_ui::platform::testing::inject_key_up(
                             *app,
                             window->id(),
-                            kKeycodeA,
-                            kKeycodeA
+                            kEnterKeycode,
+                            kEnterKeycode
                         ),
-                        "inject_key_up.a"
+                        "inject_key_up.enter"
                     )) {
                     return 1;
                 }
-                a_up_injected = true;
-            } else if (a_up_injected && !shift_tab_down_injected && frames > 8) {
+                enter_up_injected = true;
+            } else if (enter_up_injected && !space_down_injected && frames > 14) {
                 if (!check_status(
                         native_ui::platform::testing::inject_key_down(
                             *app,
                             window->id(),
-                            kTabKeycode,
-                            kTabKeycode,
-                            false,
-                            KeyModifiers::shift
+                            kSpaceKeycode,
+                            kSpaceKeycode
                         ),
-                        "inject_key_down.shift_tab"
+                        "inject_key_down.space"
                     )) {
                     return 1;
                 }
-                shift_tab_down_injected = true;
-            } else if (shift_tab_down_injected && !shift_tab_up_injected && frames > 9) {
+                space_down_injected = true;
+            } else if (space_down_injected && !space_up_injected && frames > 15) {
                 if (!check_status(
                         native_ui::platform::testing::inject_key_up(
                             *app,
                             window->id(),
-                            kTabKeycode,
-                            kTabKeycode,
-                            KeyModifiers::shift
+                            kSpaceKeycode,
+                            kSpaceKeycode
                         ),
-                        "inject_key_up.shift_tab"
+                        "inject_key_up.space"
                     )) {
                     return 1;
                 }
-                shift_tab_up_injected = true;
-            } else if (shift_tab_up_injected && !click_down_injected && frames > 11) {
+                space_up_injected = true;
+            } else if (space_up_injected && !prevent_down_injected && frames > 17) {
                 if (!check_status(
                         native_ui::platform::testing::inject_mouse_button_down(
                             *app,
                             window->id(),
                             MouseButton::left,
-                            card_points[1]
+                            button_points[2]
                         ),
-                        "inject_mouse_button_down.card2"
+                        "inject_mouse_button_down.prevent"
                     )) {
                     return 1;
                 }
-                click_down_injected = true;
-            } else if (click_down_injected && !click_up_injected && frames > 12) {
+                prevent_down_injected = true;
+            } else if (prevent_down_injected && !prevent_up_injected && frames > 18) {
                 if (!check_status(
                         native_ui::platform::testing::inject_mouse_button_up(
                             *app,
                             window->id(),
                             MouseButton::left,
-                            card_points[1]
+                            button_points[2]
                         ),
-                        "inject_mouse_button_up.card2"
+                        "inject_mouse_button_up.prevent"
                     )) {
                     return 1;
                 }
-                click_up_injected = true;
-            } else if (click_up_injected && !b_down_injected && frames > 14) {
-                if (!check_status(
-                        native_ui::platform::testing::inject_key_down(
-                            *app,
-                            window->id(),
-                            kKeycodeB,
-                            kKeycodeB
-                        ),
-                        "inject_key_down.b"
-                    )) {
-                    return 1;
-                }
-                b_down_injected = true;
-            } else if (b_down_injected && !b_up_injected && frames > 15) {
-                if (!check_status(
-                        native_ui::platform::testing::inject_key_up(
-                            *app,
-                            window->id(),
-                            kKeycodeB,
-                            kKeycodeB
-                        ),
-                        "inject_key_up.b"
-                    )) {
-                    return 1;
-                }
-                b_up_injected = true;
+                prevent_up_injected = true;
             }
         }
 
@@ -679,41 +739,37 @@ int main(int argc, char** argv) {
         }
 
         const std::vector<FocusRecord> expected_focus_records{
-            {UiEventType::focus_in, card_ids[0]},
-            {UiEventType::focus_out, card_ids[0]},
-            {UiEventType::focus_in, card_ids[2]},
-            {UiEventType::focus_out, card_ids[2]},
-            {UiEventType::focus_in, card_ids[1]}
+            {UiEventType::focus_in, button_ids[0]},
+            {UiEventType::focus_out, button_ids[0]},
+            {UiEventType::focus_in, button_ids[1]},
+            {UiEventType::focus_out, button_ids[1]},
+            {UiEventType::focus_in, button_ids[2]}
         };
-        const std::vector<KeyRecord> expected_key_records{
-            {UiEventType::key_down, UiDispatchPhase::capture, scene.root_id(), card_ids[0], kKeycodeA},
-            {UiEventType::key_down, UiDispatchPhase::capture, strip_id, card_ids[0], kKeycodeA},
-            {UiEventType::key_down, UiDispatchPhase::target, card_ids[0], card_ids[0], kKeycodeA},
-            {UiEventType::key_down, UiDispatchPhase::bubble, strip_id, card_ids[0], kKeycodeA},
-            {UiEventType::key_down, UiDispatchPhase::bubble, scene.root_id(), card_ids[0], kKeycodeA},
-            {UiEventType::key_up, UiDispatchPhase::capture, scene.root_id(), card_ids[0], kKeycodeA},
-            {UiEventType::key_up, UiDispatchPhase::capture, strip_id, card_ids[0], kKeycodeA},
-            {UiEventType::key_up, UiDispatchPhase::target, card_ids[0], card_ids[0], kKeycodeA},
-            {UiEventType::key_up, UiDispatchPhase::bubble, strip_id, card_ids[0], kKeycodeA},
-            {UiEventType::key_up, UiDispatchPhase::bubble, scene.root_id(), card_ids[0], kKeycodeA},
-            {UiEventType::key_down, UiDispatchPhase::capture, scene.root_id(), card_ids[1], kKeycodeB},
-            {UiEventType::key_down, UiDispatchPhase::capture, strip_id, card_ids[1], kKeycodeB},
-            {UiEventType::key_down, UiDispatchPhase::target, card_ids[1], card_ids[1], kKeycodeB},
-            {UiEventType::key_down, UiDispatchPhase::bubble, strip_id, card_ids[1], kKeycodeB},
-            {UiEventType::key_down, UiDispatchPhase::bubble, scene.root_id(), card_ids[1], kKeycodeB},
-            {UiEventType::key_up, UiDispatchPhase::capture, scene.root_id(), card_ids[1], kKeycodeB},
-            {UiEventType::key_up, UiDispatchPhase::capture, strip_id, card_ids[1], kKeycodeB},
-            {UiEventType::key_up, UiDispatchPhase::target, card_ids[1], card_ids[1], kKeycodeB},
-            {UiEventType::key_up, UiDispatchPhase::bubble, strip_id, card_ids[1], kKeycodeB},
-            {UiEventType::key_up, UiDispatchPhase::bubble, scene.root_id(), card_ids[1], kKeycodeB}
+        const std::vector<ClickRecord> expected_click_records{
+            {UiDispatchPhase::capture, scene.root_id(), button_ids[0], 0, MouseButton::left},
+            {UiDispatchPhase::capture, strip_id, button_ids[0], 0, MouseButton::left},
+            {UiDispatchPhase::target, button_ids[0], button_ids[0], 0, MouseButton::left},
+            {UiDispatchPhase::bubble, strip_id, button_ids[0], 0, MouseButton::left},
+            {UiDispatchPhase::bubble, scene.root_id(), button_ids[0], 0, MouseButton::left},
+            {UiDispatchPhase::capture, scene.root_id(), button_ids[1], kEnterKeycode, MouseButton::unknown},
+            {UiDispatchPhase::capture, strip_id, button_ids[1], kEnterKeycode, MouseButton::unknown},
+            {UiDispatchPhase::target, button_ids[1], button_ids[1], kEnterKeycode, MouseButton::unknown},
+            {UiDispatchPhase::bubble, strip_id, button_ids[1], kEnterKeycode, MouseButton::unknown},
+            {UiDispatchPhase::bubble, scene.root_id(), button_ids[1], kEnterKeycode, MouseButton::unknown},
+            {UiDispatchPhase::capture, scene.root_id(), button_ids[1], kSpaceKeycode, MouseButton::unknown},
+            {UiDispatchPhase::capture, strip_id, button_ids[1], kSpaceKeycode, MouseButton::unknown},
+            {UiDispatchPhase::target, button_ids[1], button_ids[1], kSpaceKeycode, MouseButton::unknown},
+            {UiDispatchPhase::bubble, strip_id, button_ids[1], kSpaceKeycode, MouseButton::unknown},
+            {UiDispatchPhase::bubble, scene.root_id(), button_ids[1], kSpaceKeycode, MouseButton::unknown}
         };
 
-        if (smoke_test && b_up_injected &&
-            focus_manager.focused_node_id() == card_ids[1] &&
+        if (smoke_test && prevent_up_injected &&
+            focus_manager.focused_node_id() == button_ids[2] &&
+            prevented_default_seen &&
             record_equals(focus_records, expected_focus_records) &&
-            record_equals(key_records, expected_key_records) &&
+            record_equals(click_records, expected_click_records) &&
             !quit_injected) {
-            std::cout << "ui_focus_demo smoke test passed.\n";
+            std::cout << "ui_click_demo smoke test passed.\n";
             if (!check_status(native_ui::platform::testing::inject_quit(*app), "inject_quit")) {
                 return 1;
             }
@@ -724,6 +780,6 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 
-    std::cout << "ui_focus_demo exited.\n";
+    std::cout << "ui_click_demo exited.\n";
     return 0;
 }

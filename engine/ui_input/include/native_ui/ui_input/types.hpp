@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <type_traits>
+
 #include "native_ui/platform/types.hpp"
 #include "native_ui/ui_core/types.hpp"
 
@@ -12,6 +15,7 @@ enum class UiEventType {
     mouse_move,
     mouse_down,
     mouse_up,
+    click,
     focus_in,
     focus_out,
     key_down,
@@ -27,9 +31,37 @@ enum class UiDispatchPhase {
 
 enum class DispatchControl {
     continue_dispatch = 0,
-    stop_propagation,
-    stop_immediate_propagation
+    stop_propagation = 1 << 0,
+    stop_immediate_propagation = 1 << 1,
+    prevent_default = 1 << 2
 };
+
+struct DispatchResult {
+    bool propagation_stopped{false};
+    bool default_prevented{false};
+};
+
+[[nodiscard]] constexpr DispatchControl operator|(const DispatchControl lhs, const DispatchControl rhs) noexcept {
+    using Storage = std::underlying_type_t<DispatchControl>;
+    return static_cast<DispatchControl>(static_cast<Storage>(lhs) | static_cast<Storage>(rhs));
+}
+
+[[nodiscard]] constexpr DispatchControl operator&(const DispatchControl lhs, const DispatchControl rhs) noexcept {
+    using Storage = std::underlying_type_t<DispatchControl>;
+    return static_cast<DispatchControl>(static_cast<Storage>(lhs) & static_cast<Storage>(rhs));
+}
+
+constexpr DispatchControl& operator|=(DispatchControl& lhs, const DispatchControl rhs) noexcept {
+    lhs = lhs | rhs;
+    return lhs;
+}
+
+[[nodiscard]] constexpr bool has_dispatch_control(
+    const DispatchControl value,
+    const DispatchControl flag
+) noexcept {
+    return (value & flag) != DispatchControl::continue_dispatch;
+}
 
 struct HitTestResult {
     bool hit{false};

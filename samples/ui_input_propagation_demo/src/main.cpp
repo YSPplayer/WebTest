@@ -416,7 +416,7 @@ int main(int argc, char** argv) {
 
             const auto ui_events = input_router.route(scene, event);
             for (const UiEvent& ui_event : ui_events) {
-                dispatcher.dispatch(
+                (void)dispatcher.dispatch(
                     scene,
                     ui_event,
                     [&](const UiDispatchEvent& dispatch_event) {

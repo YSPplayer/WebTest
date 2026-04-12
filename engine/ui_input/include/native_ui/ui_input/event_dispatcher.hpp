@@ -11,7 +11,7 @@ using DispatchHandler = std::function<DispatchControl(const UiDispatchEvent&)>;
 
 class EventDispatcher {
 public:
-    void dispatch(
+    [[nodiscard]] DispatchResult dispatch(
         const native_ui::ui_core::Scene& scene,
         const UiEvent& ui_event,
         const DispatchHandler& handler

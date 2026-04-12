@@ -40,6 +40,9 @@ UiDispatchEvent make_dispatch_event(
     case UiEventType::mouse_up:
         local_position = local_point_for_node(scene, current_node_id, ui_event.window_position);
         break;
+    case UiEventType::click:
+        local_position = ui_event.local_position;
+        break;
     default:
         break;
     }
@@ -80,6 +83,7 @@ bool should_propagate(const UiEventType type) {
     case UiEventType::mouse_move:
     case UiEventType::mouse_down:
     case UiEventType::mouse_up:
+    case UiEventType::click:
     case UiEventType::key_down:
     case UiEventType::key_up:
         return true;
@@ -88,49 +92,61 @@ bool should_propagate(const UiEventType type) {
     }
 }
 
-bool should_stop(const DispatchControl control) {
-    return control == DispatchControl::stop_propagation ||
-           control == DispatchControl::stop_immediate_propagation;
+DispatchResult apply_control(const DispatchControl control, DispatchResult result) {
+    result.default_prevented = result.default_prevented ||
+        has_dispatch_control(control, DispatchControl::prevent_default);
+    result.propagation_stopped = result.propagation_stopped ||
+        has_dispatch_control(control, DispatchControl::stop_propagation) ||
+        has_dispatch_control(control, DispatchControl::stop_immediate_propagation);
+    return result;
 }
 
 }  // namespace
 
-void EventDispatcher::dispatch(
+DispatchResult EventDispatcher::dispatch(
     const Scene& scene,
     const UiEvent& ui_event,
     const DispatchHandler& handler
 ) const {
+    DispatchResult result{};
     if (!handler || ui_event.target_node_id == kInvalidNodeId) {
-        return;
+        return result;
     }
 
     const std::vector<NodeId> path = build_path(scene, ui_event.target_node_id);
     if (path.empty()) {
-        return;
+        return result;
     }
 
     if (!should_propagate(ui_event.type)) {
-        handler(make_dispatch_event(scene, ui_event, UiDispatchPhase::target, ui_event.target_node_id));
-        return;
+        return apply_control(
+            handler(make_dispatch_event(scene, ui_event, UiDispatchPhase::target, ui_event.target_node_id)),
+            result
+        );
     }
 
     for (std::size_t index = 0; index + 1 < path.size(); ++index) {
-        if (should_stop(handler(make_dispatch_event(scene, ui_event, UiDispatchPhase::capture, path[index])))) {
-            return;
+        result = apply_control(
+            handler(make_dispatch_event(scene, ui_event, UiDispatchPhase::capture, path[index])),
+            result
+        );
+        if (result.propagation_stopped) {
+            return result;
         }
     }
 
-    if (should_stop(handler(make_dispatch_event(
+    result = apply_control(handler(make_dispatch_event(
             scene,
             ui_event,
             UiDispatchPhase::target,
             ui_event.target_node_id
-        )))) {
-        return;
+        )), result);
+    if (result.propagation_stopped) {
+        return result;
     }
 
     if (path.size() <= 1) {
-        return;
+        return result;
     }
 
     for (std::size_t index = path.size() - 1; index > 0; --index) {
@@ -139,15 +155,18 @@ void EventDispatcher::dispatch(
             continue;
         }
 
-        if (should_stop(handler(make_dispatch_event(
+        result = apply_control(handler(make_dispatch_event(
                 scene,
                 ui_event,
                 UiDispatchPhase::bubble,
                 current_node_id
-            )))) {
-            return;
+            )), result);
+        if (result.propagation_stopped) {
+            return result;
         }
     }
+
+    return result;
 }
 
 }  // namespace native_ui::ui_input

@@ -1,6 +1,7 @@
 add_library(
     native_ui_ui_input
     STATIC
+        src/default_action_engine.cpp
         src/event_dispatcher.cpp
         src/focus_manager.cpp
         src/hit_tester.cpp
