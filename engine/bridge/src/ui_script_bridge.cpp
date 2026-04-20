@@ -63,6 +63,13 @@ JSValue make_node_ref(JSContext* context, const NodeId node_id) {
     return object;
 }
 
+JSValue make_node_ref_or_null(JSContext* context, const NodeId node_id) {
+    if (node_id == native_ui::ui_core::kInvalidNodeId) {
+        return JS_NULL;
+    }
+    return make_node_ref(context, node_id);
+}
+
 bool read_node_id(JSContext* context, JSValueConst value, NodeId& out_node_id) {
     if (!JS_IsObject(value)) {
         JS_ThrowTypeError(context, "Expected a NodeRef object.");
@@ -108,6 +115,30 @@ Node* require_node(JSContext* context, JSValueConst value) {
     }
 
     return node;
+}
+
+bool find_node_by_tag_recursive(
+    const native_ui::ui_core::Scene& scene,
+    const Node& node,
+    const std::string_view tag,
+    NodeId& out_node_id
+) {
+    if (node.tag() == tag) {
+        out_node_id = node.id();
+        return true;
+    }
+
+    for (const NodeId child_id : node.children()) {
+        const Node* child = scene.find_node(child_id);
+        if (child == nullptr) {
+            continue;
+        }
+        if (find_node_by_tag_recursive(scene, *child, tag, out_node_id)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool read_color(JSContext* context, JSValueConst value, native_ui::ui_paint::PaintColor& out_color) {
@@ -462,6 +493,211 @@ const char* to_string(const UiDispatchPhase phase) {
     }
 }
 
+const char* to_string(const PointerEvents value) {
+    switch (value) {
+    case PointerEvents::auto_mode:
+        return "auto";
+    case PointerEvents::none:
+        return "none";
+    default:
+        return "auto";
+    }
+}
+
+const char* to_string(const FocusPolicy value) {
+    switch (value) {
+    case FocusPolicy::none:
+        return "none";
+    case FocusPolicy::pointer:
+        return "pointer";
+    case FocusPolicy::keyboard:
+        return "keyboard";
+    case FocusPolicy::pointer_and_keyboard:
+        return "pointer_and_keyboard";
+    default:
+        return "none";
+    }
+}
+
+const char* to_string(const SemanticRole value) {
+    switch (value) {
+    case SemanticRole::none:
+        return "none";
+    case SemanticRole::button:
+        return "button";
+    default:
+        return "none";
+    }
+}
+
+const char* to_string(const FlexDirection value) {
+    switch (value) {
+    case FlexDirection::column:
+        return "column";
+    case FlexDirection::row:
+        return "row";
+    default:
+        return "column";
+    }
+}
+
+const char* to_string(const JustifyContent value) {
+    switch (value) {
+    case JustifyContent::flex_start:
+        return "flex_start";
+    case JustifyContent::center:
+        return "center";
+    case JustifyContent::flex_end:
+        return "flex_end";
+    case JustifyContent::space_between:
+        return "space_between";
+    case JustifyContent::space_around:
+        return "space_around";
+    case JustifyContent::space_evenly:
+        return "space_evenly";
+    default:
+        return "flex_start";
+    }
+}
+
+const char* to_string(const AlignItems value) {
+    switch (value) {
+    case AlignItems::stretch:
+        return "stretch";
+    case AlignItems::flex_start:
+        return "flex_start";
+    case AlignItems::center:
+        return "center";
+    case AlignItems::flex_end:
+        return "flex_end";
+    default:
+        return "stretch";
+    }
+}
+
+const char* to_string(const native_ui::platform::MouseButton value) {
+    switch (value) {
+    case native_ui::platform::MouseButton::left:
+        return "left";
+    case native_ui::platform::MouseButton::middle:
+        return "middle";
+    case native_ui::platform::MouseButton::right:
+        return "right";
+    case native_ui::platform::MouseButton::x1:
+        return "x1";
+    case native_ui::platform::MouseButton::x2:
+        return "x2";
+    default:
+        return "unknown";
+    }
+}
+
+JSValue make_color_array(JSContext* context, const native_ui::ui_paint::PaintColor& color) {
+    JSValue array = JS_NewArray(context);
+    JS_SetPropertyUint32(context, array, 0, JS_NewInt32(context, color.r));
+    JS_SetPropertyUint32(context, array, 1, JS_NewInt32(context, color.g));
+    JS_SetPropertyUint32(context, array, 2, JS_NewInt32(context, color.b));
+    JS_SetPropertyUint32(context, array, 3, JS_NewInt32(context, color.a));
+    return array;
+}
+
+JSValue make_edges_object(JSContext* context, const LayoutEdges& edges) {
+    JSValue object = JS_NewObject(context);
+    JS_SetPropertyStr(context, object, "left", JS_NewFloat64(context, edges.left));
+    JS_SetPropertyStr(context, object, "top", JS_NewFloat64(context, edges.top));
+    JS_SetPropertyStr(context, object, "right", JS_NewFloat64(context, edges.right));
+    JS_SetPropertyStr(context, object, "bottom", JS_NewFloat64(context, edges.bottom));
+    return object;
+}
+
+JSValue make_style_object(JSContext* context, const Node& node) {
+    JSValue object = JS_NewObject(context);
+    JS_SetPropertyStr(context, object, "visible", JS_NewBool(context, node.style().visible ? 1 : 0));
+    JS_SetPropertyStr(context, object, "clipChildren", JS_NewBool(context, node.style().clip_children ? 1 : 0));
+    JS_SetPropertyStr(context, object, "hasBackground", JS_NewBool(context, node.style().has_background ? 1 : 0));
+    JS_SetPropertyStr(context, object, "pointerEvents", JS_NewString(context, to_string(node.style().pointer_events)));
+    JS_SetPropertyStr(context, object, "focusPolicy", JS_NewString(context, to_string(node.style().focus_policy)));
+    JS_SetPropertyStr(context, object, "backgroundColor", make_color_array(context, node.style().background_color));
+    return object;
+}
+
+JSValue make_layout_style_object(JSContext* context, const Node& node) {
+    JSValue object = JS_NewObject(context);
+    JS_SetPropertyStr(context, object, "enabled", JS_NewBool(context, node.layout_style().enabled ? 1 : 0));
+    JS_SetPropertyStr(context, object, "width", JS_NewFloat64(context, node.layout_style().width.value));
+    JS_SetPropertyStr(context, object, "widthDefined", JS_NewBool(context, node.layout_style().width.defined ? 1 : 0));
+    JS_SetPropertyStr(context, object, "height", JS_NewFloat64(context, node.layout_style().height.value));
+    JS_SetPropertyStr(
+        context,
+        object,
+        "heightDefined",
+        JS_NewBool(context, node.layout_style().height.defined ? 1 : 0)
+    );
+    JS_SetPropertyStr(context, object, "padding", make_edges_object(context, node.layout_style().padding));
+    JS_SetPropertyStr(context, object, "margin", make_edges_object(context, node.layout_style().margin));
+    JS_SetPropertyStr(context, object, "flexGrow", JS_NewFloat64(context, node.layout_style().flex_grow));
+    JS_SetPropertyStr(
+        context,
+        object,
+        "flexDirection",
+        JS_NewString(context, to_string(node.layout_style().flex_direction))
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "justifyContent",
+        JS_NewString(context, to_string(node.layout_style().justify_content))
+    );
+    JS_SetPropertyStr(context, object, "alignItems", JS_NewString(context, to_string(node.layout_style().align_items)));
+    return object;
+}
+
+JSValue make_layout_rect_object(JSContext* context, const Node& node) {
+    JSValue object = JS_NewObject(context);
+    JS_SetPropertyStr(context, object, "x", JS_NewFloat64(context, node.layout_rect().x));
+    JS_SetPropertyStr(context, object, "y", JS_NewFloat64(context, node.layout_rect().y));
+    JS_SetPropertyStr(context, object, "width", JS_NewFloat64(context, node.layout_rect().width));
+    JS_SetPropertyStr(context, object, "height", JS_NewFloat64(context, node.layout_rect().height));
+    JS_SetPropertyStr(context, object, "valid", JS_NewBool(context, node.layout_rect().is_valid() ? 1 : 0));
+    return object;
+}
+
+JSValue make_semantics_object(JSContext* context, const Node& node) {
+    JSValue object = JS_NewObject(context);
+    JS_SetPropertyStr(context, object, "role", JS_NewString(context, to_string(node.semantics().role)));
+    JS_SetPropertyStr(context, object, "tag", JS_NewString(context, node.tag().c_str()));
+    return object;
+}
+
+JSValue make_modifiers_object(JSContext* context, const native_ui::platform::KeyModifiers modifiers) {
+    JSValue object = JS_NewObject(context);
+    JS_SetPropertyStr(
+        context,
+        object,
+        "shift",
+        JS_NewBool(context, native_ui::platform::has_modifier(modifiers, native_ui::platform::KeyModifiers::shift) ? 1 : 0)
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "ctrl",
+        JS_NewBool(context, native_ui::platform::has_modifier(modifiers, native_ui::platform::KeyModifiers::ctrl) ? 1 : 0)
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "alt",
+        JS_NewBool(context, native_ui::platform::has_modifier(modifiers, native_ui::platform::KeyModifiers::alt) ? 1 : 0)
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "meta",
+        JS_NewBool(context, native_ui::platform::has_modifier(modifiers, native_ui::platform::KeyModifiers::meta) ? 1 : 0)
+    );
+    return object;
+}
+
 DispatchControl read_dispatch_control(JSContext* context, JSValueConst event_object) {
     DispatchControl control = DispatchControl::continue_dispatch;
     bool flag_value = false;
@@ -493,6 +729,7 @@ JSValue js_event_stop_propagation(JSContext* context, JSValueConst this_value, i
     (void)argc;
     (void)argv;
     JS_SetPropertyStr(context, this_value, "__stopPropagation", JS_NewBool(context, 1));
+    JS_SetPropertyStr(context, this_value, "propagationStopped", JS_NewBool(context, 1));
     return JS_UNDEFINED;
 }
 
@@ -506,7 +743,38 @@ JSValue js_event_stop_immediate_propagation(
     (void)argv;
     JS_SetPropertyStr(context, this_value, "__stopImmediatePropagation", JS_NewBool(context, 1));
     JS_SetPropertyStr(context, this_value, "__stopPropagation", JS_NewBool(context, 1));
+    JS_SetPropertyStr(context, this_value, "propagationStopped", JS_NewBool(context, 1));
+    JS_SetPropertyStr(context, this_value, "immediatePropagationStopped", JS_NewBool(context, 1));
     return JS_UNDEFINED;
+}
+
+JSValue js_event_is_default_prevented(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)argc;
+    (void)argv;
+    bool value = false;
+    (void)native_ui::script::get_bool_property(context, this_value, "__preventDefault", value);
+    return JS_NewBool(context, value ? 1 : 0);
+}
+
+JSValue js_event_is_propagation_stopped(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)argc;
+    (void)argv;
+    bool value = false;
+    (void)native_ui::script::get_bool_property(context, this_value, "__stopPropagation", value);
+    return JS_NewBool(context, value ? 1 : 0);
+}
+
+JSValue js_event_is_immediate_propagation_stopped(
+    JSContext* context,
+    JSValueConst this_value,
+    int argc,
+    JSValueConst* argv
+) {
+    (void)argc;
+    (void)argv;
+    bool value = false;
+    (void)native_ui::script::get_bool_property(context, this_value, "__stopImmediatePropagation", value);
+    return JS_NewBool(context, value ? 1 : 0);
 }
 
 JSValue make_event_object(JSContext* context, const UiDispatchEvent& dispatch_event) {
@@ -529,7 +797,12 @@ JSValue make_event_object(JSContext* context, const UiDispatchEvent& dispatch_ev
     JS_SetPropertyStr(context, object, "keycode", JS_NewInt32(context, dispatch_event.keycode));
     JS_SetPropertyStr(context, object, "scancode", JS_NewInt32(context, dispatch_event.scancode));
     JS_SetPropertyStr(context, object, "repeat", JS_NewBool(context, dispatch_event.repeat ? 1 : 0));
+    JS_SetPropertyStr(context, object, "button", JS_NewInt32(context, static_cast<int>(dispatch_event.button)));
+    JS_SetPropertyStr(context, object, "buttonName", JS_NewString(context, to_string(dispatch_event.button)));
+    JS_SetPropertyStr(context, object, "modifiers", make_modifiers_object(context, dispatch_event.modifiers));
     JS_SetPropertyStr(context, object, "defaultPrevented", JS_NewBool(context, 0));
+    JS_SetPropertyStr(context, object, "propagationStopped", JS_NewBool(context, 0));
+    JS_SetPropertyStr(context, object, "immediatePropagationStopped", JS_NewBool(context, 0));
     JS_SetPropertyStr(context, object, "__preventDefault", JS_NewBool(context, 0));
     JS_SetPropertyStr(context, object, "__stopPropagation", JS_NewBool(context, 0));
     JS_SetPropertyStr(context, object, "__stopImmediatePropagation", JS_NewBool(context, 0));
@@ -550,6 +823,29 @@ JSValue make_event_object(JSContext* context, const UiDispatchEvent& dispatch_ev
         object,
         "stopImmediatePropagation",
         JS_NewCFunction(context, js_event_stop_immediate_propagation, "stopImmediatePropagation", 0)
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "isDefaultPrevented",
+        JS_NewCFunction(context, js_event_is_default_prevented, "isDefaultPrevented", 0)
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "isPropagationStopped",
+        JS_NewCFunction(context, js_event_is_propagation_stopped, "isPropagationStopped", 0)
+    );
+    JS_SetPropertyStr(
+        context,
+        object,
+        "isImmediatePropagationStopped",
+        JS_NewCFunction(
+            context,
+            js_event_is_immediate_propagation_stopped,
+            "isImmediatePropagationStopped",
+            0
+        )
     );
     return object;
 }
@@ -1055,8 +1351,307 @@ JSValue js_set_layout(JSContext* context, JSValueConst this_value, int argc, JSV
     return JS_UNDEFINED;
 }
 
+JSValue js_get_node_by_id(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getNodeById requires an id.");
+        return JS_EXCEPTION;
+    }
+
+    auto* bridge = require_bridge(context);
+    if (bridge == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    std::int64_t raw_node_id{};
+    if (JS_ToInt64(context, &raw_node_id, argv[0]) < 0) {
+        return JS_EXCEPTION;
+    }
+
+    const NodeId node_id = static_cast<NodeId>(raw_node_id);
+    if (bridge->scene().find_node(node_id) == nullptr) {
+        return JS_NULL;
+    }
+
+    return make_node_ref(context, node_id);
+}
+
+JSValue js_get_children(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getChildren requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    JSValue array = JS_NewArray(context);
+    std::uint32_t index = 0;
+    for (const NodeId child_id : node->children()) {
+        JS_SetPropertyUint32(context, array, index++, make_node_ref(context, child_id));
+    }
+    return array;
+}
+
+JSValue js_get_parent(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getParent requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return make_node_ref_or_null(context, node->parent_id());
+}
+
+JSValue js_get_child_at(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 2) {
+        JS_ThrowTypeError(context, "getChildAt requires a node and index.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    std::int32_t index = 0;
+    if (!native_ui::script::to_int32(context, argv[1], index)) {
+        JS_ThrowTypeError(context, "Child index must be numeric.");
+        return JS_EXCEPTION;
+    }
+
+    if (index < 0 || static_cast<std::size_t>(index) >= node->children().size()) {
+        return JS_NULL;
+    }
+
+    return make_node_ref(context, node->children()[static_cast<std::size_t>(index)]);
+}
+
+JSValue js_get_child_count(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getChildCount requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewInt32(context, static_cast<int>(node->children().size()));
+}
+
+JSValue js_get_style(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getStyle requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return make_style_object(context, *node);
+}
+
+JSValue js_get_layout(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getLayout requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return make_layout_style_object(context, *node);
+}
+
+JSValue js_get_layout_rect(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getLayoutRect requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return make_layout_rect_object(context, *node);
+}
+
+JSValue js_get_semantics(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getSemantics requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return make_semantics_object(context, *node);
+}
+
+JSValue js_is_focused(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "isFocused requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    auto* bridge = require_bridge(context);
+    if (bridge == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewBool(context, bridge->ui_runtime().focus_manager().focused_node_id() == node->id() ? 1 : 0);
+}
+
+JSValue js_request_focus(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "requestFocus requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    auto* bridge = require_bridge(context);
+    if (bridge == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    const auto focus_events = bridge->ui_runtime().focus_manager().request_focus(bridge->scene(), node->id());
+    for (const auto& focus_event : focus_events) {
+        (void)bridge->ui_runtime().dispatch_ui_event(bridge->scene(), focus_event);
+    }
+
+    return JS_NewBool(context, bridge->ui_runtime().focus_manager().focused_node_id() == node->id() ? 1 : 0);
+}
+
+JSValue js_clear_focus(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    (void)argc;
+    (void)argv;
+    auto* bridge = require_bridge(context);
+    if (bridge == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    const auto focus_events = bridge->ui_runtime().focus_manager().clear_focus(bridge->scene());
+    for (const auto& focus_event : focus_events) {
+        (void)bridge->ui_runtime().dispatch_ui_event(bridge->scene(), focus_event);
+    }
+
+    return JS_UNDEFINED;
+}
+
+JSValue js_get_focused_node(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    (void)argc;
+    (void)argv;
+    auto* bridge = require_bridge(context);
+    if (bridge == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return make_node_ref_or_null(context, bridge->ui_runtime().focus_manager().focused_node_id());
+}
+
+JSValue js_set_tag(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 2) {
+        JS_ThrowTypeError(context, "setTag requires a node and tag string.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    node->tag() = native_ui::script::to_std_string(context, argv[1]);
+    return JS_UNDEFINED;
+}
+
+JSValue js_get_tag(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "getTag requires a node.");
+        return JS_EXCEPTION;
+    }
+
+    Node* node = require_node(context, argv[0]);
+    if (node == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewString(context, node->tag().c_str());
+}
+
+JSValue js_find_by_tag(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    if (argc < 1) {
+        JS_ThrowTypeError(context, "findByTag requires a tag string.");
+        return JS_EXCEPTION;
+    }
+
+    auto* bridge = require_bridge(context);
+    if (bridge == nullptr) {
+        return JS_EXCEPTION;
+    }
+
+    const std::string tag = native_ui::script::to_std_string(context, argv[0]);
+    const Node* root = bridge->scene().root();
+    if (root == nullptr || tag.empty()) {
+        return JS_NULL;
+    }
+
+    NodeId match_id = native_ui::ui_core::kInvalidNodeId;
+    if (!find_node_by_tag_recursive(bridge->scene(), *root, tag, match_id)) {
+        return JS_NULL;
+    }
+
+    return make_node_ref(context, match_id);
+}
+
 int init_ui_module(JSContext* context, JSModuleDef* module_def) {
     if (JS_SetModuleExport(context, module_def, "root", JS_NewCFunction(context, js_root, "root", 0)) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getNodeById",
+            JS_NewCFunction(context, js_get_node_by_id, "getNodeById", 1)
+        ) < 0) {
         return -1;
     }
     if (JS_SetModuleExport(context, module_def, "createBox", JS_NewCFunction(context, js_create_box, "createBox", 0)) <
@@ -1075,8 +1670,24 @@ int init_ui_module(JSContext* context, JSModuleDef* module_def) {
         0) {
         return -1;
     }
+    if (JS_SetModuleExport(context, module_def, "getStyle", JS_NewCFunction(context, js_get_style, "getStyle", 1)) <
+        0) {
+        return -1;
+    }
     if (JS_SetModuleExport(context, module_def, "setLayout", JS_NewCFunction(context, js_set_layout, "setLayout", 2)) <
         0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(context, module_def, "getLayout", JS_NewCFunction(context, js_get_layout, "getLayout", 1)) <
+        0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getLayoutRect",
+            JS_NewCFunction(context, js_get_layout_rect, "getLayoutRect", 1)
+        ) < 0) {
         return -1;
     }
     if (JS_SetModuleExport(
@@ -1085,6 +1696,80 @@ int init_ui_module(JSContext* context, JSModuleDef* module_def) {
             "setSemantics",
             JS_NewCFunction(context, js_set_semantics, "setSemantics", 2)
         ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getSemantics",
+            JS_NewCFunction(context, js_get_semantics, "getSemantics", 1)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getChildren",
+            JS_NewCFunction(context, js_get_children, "getChildren", 1)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(context, module_def, "getParent", JS_NewCFunction(context, js_get_parent, "getParent", 1)) <
+        0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getChildAt",
+            JS_NewCFunction(context, js_get_child_at, "getChildAt", 2)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getChildCount",
+            JS_NewCFunction(context, js_get_child_count, "getChildCount", 1)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(context, module_def, "isFocused", JS_NewCFunction(context, js_is_focused, "isFocused", 1)) <
+        0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "requestFocus",
+            JS_NewCFunction(context, js_request_focus, "requestFocus", 1)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "clearFocus",
+            JS_NewCFunction(context, js_clear_focus, "clearFocus", 0)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(
+            context,
+            module_def,
+            "getFocusedNode",
+            JS_NewCFunction(context, js_get_focused_node, "getFocusedNode", 0)
+        ) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(context, module_def, "setTag", JS_NewCFunction(context, js_set_tag, "setTag", 2)) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(context, module_def, "getTag", JS_NewCFunction(context, js_get_tag, "getTag", 1)) < 0) {
+        return -1;
+    }
+    if (JS_SetModuleExport(context, module_def, "findByTag", JS_NewCFunction(context, js_find_by_tag, "findByTag", 1)) <
+        0) {
         return -1;
     }
     if (JS_SetModuleExport(
@@ -1129,11 +1814,27 @@ JSModuleDef* load_ui_module(JSContext* context, const char* module_name) {
     }
 
     JS_AddModuleExport(context, module_def, "root");
+    JS_AddModuleExport(context, module_def, "getNodeById");
     JS_AddModuleExport(context, module_def, "createBox");
     JS_AddModuleExport(context, module_def, "appendChild");
     JS_AddModuleExport(context, module_def, "setStyle");
+    JS_AddModuleExport(context, module_def, "getStyle");
     JS_AddModuleExport(context, module_def, "setLayout");
+    JS_AddModuleExport(context, module_def, "getLayout");
+    JS_AddModuleExport(context, module_def, "getLayoutRect");
     JS_AddModuleExport(context, module_def, "setSemantics");
+    JS_AddModuleExport(context, module_def, "getSemantics");
+    JS_AddModuleExport(context, module_def, "getChildren");
+    JS_AddModuleExport(context, module_def, "getParent");
+    JS_AddModuleExport(context, module_def, "getChildAt");
+    JS_AddModuleExport(context, module_def, "getChildCount");
+    JS_AddModuleExport(context, module_def, "isFocused");
+    JS_AddModuleExport(context, module_def, "requestFocus");
+    JS_AddModuleExport(context, module_def, "clearFocus");
+    JS_AddModuleExport(context, module_def, "getFocusedNode");
+    JS_AddModuleExport(context, module_def, "setTag");
+    JS_AddModuleExport(context, module_def, "getTag");
+    JS_AddModuleExport(context, module_def, "findByTag");
     JS_AddModuleExport(context, module_def, "addEventListener");
     JS_AddModuleExport(context, module_def, "removeEventListener");
     JS_AddModuleExport(context, module_def, "requestLayout");

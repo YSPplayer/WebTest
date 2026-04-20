@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "native_ui/ui_core/layout_style.hpp"
@@ -65,6 +66,14 @@ public:
         return semantics_;
     }
 
+    [[nodiscard]] const std::string& tag() const noexcept {
+        return tag_;
+    }
+
+    [[nodiscard]] std::string& tag() noexcept {
+        return tag_;
+    }
+
 private:
     friend class Scene;
 
@@ -79,6 +88,7 @@ private:
     LayoutRect layout_rect_{};
     LayoutStyle layout_style_{};
     Semantics semantics_{};
+    std::string tag_{};
 };
 
 }  // namespace native_ui::ui_core

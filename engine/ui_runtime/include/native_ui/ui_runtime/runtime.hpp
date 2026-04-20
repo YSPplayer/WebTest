@@ -28,6 +28,11 @@ public:
         return focus_manager_;
     }
 
+    [[nodiscard]] native_ui::ui_input::DispatchResult dispatch_ui_event(
+        const native_ui::ui_core::Scene& scene,
+        const native_ui::ui_input::UiEvent& ui_event
+    );
+
     void prune_invalid_bindings(const native_ui::ui_core::Scene& scene);
     void process_platform_event(
         const native_ui::ui_core::Scene& scene,
@@ -35,11 +40,6 @@ public:
     );
 
 private:
-    [[nodiscard]] native_ui::ui_input::DispatchResult dispatch_ui_event(
-        const native_ui::ui_core::Scene& scene,
-        const native_ui::ui_input::UiEvent& ui_event
-    );
-
     ListenerRegistry listener_registry_{};
     native_ui::ui_input::InputRouter input_router_{};
     native_ui::ui_input::FocusManager focus_manager_{};
